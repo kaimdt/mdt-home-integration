@@ -25,31 +25,27 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-async def _validate_dashboard_url(
-    hass: HomeAssistant, url: str
-) -> dict[str, str]:
-    """Validate the dashboard URL by hitting its /health endpoint."""
-    errors: dict[str, str] = {}
-    if not url:
-        return errors  # URL is optional
+async def _test_dashboard_url(hass: HomeAssistant, url: str) -> bool:
+    """Try to reach the dashboard. Returns True if reachable, False otherwise.
 
-    session = async_get_clientsession(hass)
+    This is intentionally non-blocking — a failed check will NOT prevent
+    the config entry from being created.
+    """
+    if not url:
+        return False
+
+    session = async_get_clientsession(hass, verify_ssl=False)
     try:
         async with session.get(
             f"{url.rstrip('/')}/health",
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
-            if resp.status != 200:
-                errors["base"] = "cannot_connect"
-            else:
+            if resp.status == 200:
                 data = await resp.json()
-                if data.get("status") != "ok":
-                    errors["base"] = "cannot_connect"
-    except aiohttp.InvalidURL:
-        errors["base"] = "invalid_url"
-    except Exception:
-        errors["base"] = "cannot_connect"
-    return errors
+                return data.get("status") == "ok"
+    except Exception as err:
+        _LOGGER.debug("Dashboard connection test failed for %s: %s", url, err)
+    return False
 
 
 class MDTHomeDashboardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -67,8 +63,12 @@ class MDTHomeDashboardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             dashboard_url = user_input.get(CONF_DASHBOARD_URL, "").strip()
             user_input[CONF_DASHBOARD_URL] = dashboard_url
 
-            if dashboard_url:
-                errors = await _validate_dashboard_url(self.hass, dashboard_url)
+            # Basic URL format check (non-blocking)
+            if dashboard_url and not (
+                dashboard_url.startswith("http://")
+                or dashboard_url.startswith("https://")
+            ):
+                errors["base"] = "invalid_url"
 
             if not errors:
                 # Prevent duplicate entries for the same URL
@@ -76,6 +76,16 @@ class MDTHomeDashboardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     dashboard_url or "mdt_home_dashboard_default"
                 )
                 self._abort_if_unique_id_configured()
+
+                # Test connection (non-blocking — entry is created regardless)
+                if dashboard_url:
+                    reachable = await _test_dashboard_url(self.hass, dashboard_url)
+                    if not reachable:
+                        _LOGGER.warning(
+                            "Dashboard at %s is not reachable right now. "
+                            "The integration will keep retrying in the background.",
+                            dashboard_url,
+                        )
 
                 return self.async_create_entry(
                     title=user_input.get(CONF_NAME, DEFAULT_NAME),
@@ -123,8 +133,11 @@ class MDTHomeDashboardOptionsFlow(config_entries.OptionsFlow):
             dashboard_url = user_input.get(CONF_DASHBOARD_URL, "").strip()
             user_input[CONF_DASHBOARD_URL] = dashboard_url
 
-            if dashboard_url:
-                errors = await _validate_dashboard_url(self.hass, dashboard_url)
+            if dashboard_url and not (
+                dashboard_url.startswith("http://")
+                or dashboard_url.startswith("https://")
+            ):
+                errors["base"] = "invalid_url"
 
             if not errors:
                 return self.async_create_entry(title="", data=user_input)

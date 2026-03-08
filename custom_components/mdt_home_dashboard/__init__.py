@@ -157,7 +157,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
 
     dashboard_url = entry.data.get(CONF_DASHBOARD_URL, "")
-    session = async_get_clientsession(hass)
+    session = async_get_clientsession(hass, verify_ssl=False)
     client = DashboardClient(dashboard_url, session) if dashboard_url else None
 
     hass.data[DOMAIN][entry.entry_id] = {
