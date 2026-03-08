@@ -1,7 +1,7 @@
 """Constants for the MDT HOME Dashboard integration."""
 
 DOMAIN = "mdt_home_dashboard"
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 
 # Configuration constants
 CONF_DASHBOARD_URL = "dashboard_url"
@@ -43,3 +43,14 @@ SENSOR_DASHBOARD_STATE = "dashboard_state"
 # Data keys stored in hass.data[DOMAIN]
 DATA_COORDINATOR = "coordinator"
 DATA_CLIENT = "client"
+
+# Theme options
+THEME_OPTIONS = ["auto", "day", "evening", "night", "sleep"]
+
+# Page options
+PAGE_OPTIONS = ["home", "rooms", "climate", "energy", "security", "media", "settings"]
+
+# Brightness range
+BRIGHTNESS_MIN = 0
+BRIGHTNESS_MAX = 100
+BRIGHTNESS_STEP = 5

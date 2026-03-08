@@ -13,7 +13,10 @@ from typing import Any
 import aiohttp
 import voluptuous as vol
 
-from homeassistant.components import frontend as ha_frontend
+try:
+    from homeassistant.components import frontend as ha_frontend
+except ImportError:
+    ha_frontend = None  # type: ignore[assignment]
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -42,7 +45,14 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR, Platform.SWITCH, Platform.BINARY_SENSOR, Platform.BUTTON]
+PLATFORMS = [
+    Platform.SENSOR,
+    Platform.SWITCH,
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.NUMBER,
+    Platform.SELECT,
+]
 
 # Optional YAML configuration (backwards-compat, config-flow is preferred)
 CONFIG_SCHEMA = vol.Schema(
@@ -147,6 +157,25 @@ class DashboardClient:
             resp.raise_for_status()
             return await resp.json()
 
+    async def get_settings(self) -> dict[str, Any]:
+        """GET /api/integration/settings."""
+        async with self._session.get(
+            f"{self._base}/api/integration/settings", timeout=aiohttp.ClientTimeout(total=10)
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            return data.get("settings", {})
+
+    async def set_settings(self, settings: dict[str, Any]) -> dict:
+        """POST /api/integration/settings."""
+        async with self._session.post(
+            f"{self._base}/api/integration/settings",
+            json=settings,
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
 
 # ---------- Setup ----------
 
@@ -212,7 +241,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR] = coordinator
 
     # Register sidebar panel (iframe pointing at the dashboard)
-    if dashboard_url and entry.data.get(CONF_PANEL_ENABLED, True):
+    if dashboard_url and entry.data.get(CONF_PANEL_ENABLED, True) and ha_frontend:
         try:
             ha_frontend.async_register_built_in_panel(
                 hass,
@@ -288,32 +317,71 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         hass.bus.async_fire(f"{DOMAIN}_notification", payload)
 
     async def handle_set_theme(call: ServiceCall) -> None:
-        hass.bus.async_fire(f"{DOMAIN}_theme", {"theme": call.data["theme"], "action": "set"})
+        theme = call.data["theme"]
+        client = _get_client()
+        if client:
+            try:
+                await client.send_command("set_theme", {"theme": theme})
+            except Exception:
+                _LOGGER.warning("Could not set theme on dashboard")
+        hass.bus.async_fire(f"{DOMAIN}_theme", {"theme": theme, "action": "set"})
 
     async def handle_switch_page(call: ServiceCall) -> None:
+        page_id = call.data["page_id"]
+        client = _get_client()
+        if client:
+            try:
+                await client.send_command("switch_page", {"page_id": page_id})
+            except Exception:
+                _LOGGER.warning("Could not switch page on dashboard")
         hass.bus.async_fire(
-            f"{DOMAIN}_navigation", {"page_id": call.data["page_id"], "action": "switch"}
+            f"{DOMAIN}_navigation", {"page_id": page_id, "action": "switch"}
         )
 
     async def handle_activate_scene(call: ServiceCall) -> None:
+        scene_id = call.data["scene_id"]
+        client = _get_client()
+        if client:
+            try:
+                await client.send_command("set_setting", {"active_scene": scene_id})
+            except Exception:
+                _LOGGER.warning("Could not activate scene on dashboard")
         hass.bus.async_fire(
-            f"{DOMAIN}_scene", {"scene_id": call.data["scene_id"], "action": "activate"}
+            f"{DOMAIN}_scene", {"scene_id": scene_id, "action": "activate"}
         )
 
     async def handle_set_background(call: ServiceCall) -> None:
+        bg_type = call.data["type"]
+        bg_config = call.data.get("config", {})
+        client = _get_client()
+        if client:
+            try:
+                await client.send_command("set_setting", {
+                    "background_type": bg_type,
+                    "background_config": bg_config,
+                })
+            except Exception:
+                _LOGGER.warning("Could not set background on dashboard")
         hass.bus.async_fire(
             f"{DOMAIN}_background",
-            {"type": call.data["type"], "config": call.data.get("config", {}), "action": "set"},
+            {"type": bg_type, "config": bg_config, "action": "set"},
         )
 
     async def handle_trigger_automation(call: ServiceCall) -> None:
+        automation_id = call.data["automation_id"]
+        data = call.data.get("data", {})
+        client = _get_client()
+        if client:
+            try:
+                await client.send_command("set_setting", {
+                    "trigger_automation": automation_id,
+                    "automation_data": data,
+                })
+            except Exception:
+                _LOGGER.warning("Could not trigger automation on dashboard")
         hass.bus.async_fire(
             f"{DOMAIN}_automation",
-            {
-                "automation_id": call.data["automation_id"],
-                "data": call.data.get("data", {}),
-                "action": "trigger",
-            },
+            {"automation_id": automation_id, "data": data, "action": "trigger"},
         )
 
     _svc = [
