@@ -7,22 +7,27 @@ so every metric shown in HA reflects actual dashboard state.
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import Any
 
 import aiohttp
 import voluptuous as vol
 
+from homeassistant.components import frontend as ha_frontend
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+
 from .const import (
     CONF_DASHBOARD_URL,
     CONF_PANEL_ENABLED,
     DATA_CLIENT,
     DATA_COORDINATOR,
+    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     SERVICE_ACTIVATE_SCENE,
     SERVICE_REFRESH_STATE,
@@ -32,6 +37,7 @@ from .const import (
     SERVICE_SWITCH_PAGE,
     SERVICE_TRIGGER_AUTOMATION,
     SERVICE_UPDATE_DASHBOARD,
+    VERSION,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -165,16 +171,60 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "url": dashboard_url,
     }
 
+    # Create the data coordinator here so ALL platforms (sensor, binary_sensor,
+    # etc.) can use it even when async_forward_entry_setups runs concurrently.
+    async def _async_update_data() -> dict[str, Any]:
+        """Poll the dashboard backend for live metrics."""
+        if client is None:
+            return {
+                "status": "not_configured",
+                "online": False,
+                "ha_connected": False,
+                "connected_clients": 0,
+                "entity_count": 0,
+                "version": VERSION,
+                "timestamp": None,
+            }
+        try:
+            data = await client.get_status()
+            data["online"] = True
+            return data
+        except Exception as err:
+            _LOGGER.debug("Dashboard unreachable: %s", err)
+            return {
+                "status": "offline",
+                "online": False,
+                "ha_connected": False,
+                "connected_clients": 0,
+                "entity_count": 0,
+                "version": "unknown",
+                "timestamp": None,
+            }
+
+    coordinator = DataUpdateCoordinator(
+        hass,
+        _LOGGER,
+        name=f"{DOMAIN}_{entry.entry_id}",
+        update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
+        update_method=_async_update_data,
+    )
+    await coordinator.async_config_entry_first_refresh()
+    hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR] = coordinator
+
     # Register sidebar panel (iframe pointing at the dashboard)
     if dashboard_url and entry.data.get(CONF_PANEL_ENABLED, True):
-        hass.components.frontend.async_register_built_in_panel(
-            "iframe",
-            entry.data.get(CONF_NAME, "MDT HOME"),
-            "mdi:monitor-dashboard",
-            DOMAIN,
-            {"url": dashboard_url},
-            require_admin=False,
-        )
+        try:
+            ha_frontend.async_register_built_in_panel(
+                hass,
+                "iframe",
+                entry.data.get(CONF_NAME, "MDT HOME"),
+                "mdi:monitor-dashboard",
+                DOMAIN,
+                {"url": dashboard_url},
+                require_admin=False,
+            )
+        except Exception:
+            _LOGGER.debug("Could not register sidebar panel")
 
     # Register services (idempotent)
     await _async_register_services(hass)
@@ -191,7 +241,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
         # Remove sidebar panel
-        hass.components.frontend.async_remove_panel(DOMAIN)
+        try:
+            ha_frontend.async_remove_panel(hass, DOMAIN)
+        except Exception:
+            _LOGGER.debug("Could not remove sidebar panel")
     return unload_ok
 
 

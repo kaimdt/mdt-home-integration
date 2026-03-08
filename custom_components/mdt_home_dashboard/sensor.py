@@ -1,8 +1,8 @@
 """Sensor platform for MDT HOME Dashboard integration."""
 from __future__ import annotations
 
-from datetime import timedelta
 import logging
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -14,18 +14,12 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
-    DataUpdateCoordinator,
-    UpdateFailed,
-)
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     CONF_DASHBOARD_URL,
-    DATA_CLIENT,
     DATA_COORDINATOR,
     DEFAULT_NAME,
-    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     SENSOR_CONNECTED_CLIENTS,
     SENSOR_DASHBOARD_STATE,
@@ -42,14 +36,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up MDT HOME Dashboard sensors based on a config entry."""
-    entry_data = hass.data[DOMAIN][entry.entry_id]
-    client = entry_data.get(DATA_CLIENT)
-
-    coordinator = MDTDashboardDataUpdateCoordinator(hass, entry, client)
-    await coordinator.async_config_entry_first_refresh()
-
-    # Store coordinator so other platforms (binary_sensor, button) can reuse it
-    entry_data[DATA_COORDINATOR] = coordinator
+    coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
 
     sensors = [
         MDTDashboardConnectedClientsSensor(coordinator, entry),
@@ -64,59 +51,12 @@ async def async_setup_entry(
     async_add_entities(sensors)
 
 
-class MDTDashboardDataUpdateCoordinator(DataUpdateCoordinator):
-    """Fetches real data from the dashboard backend via /api/integration/status."""
-
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, client) -> None:
-        self.entry = entry
-        self._client = client  # DashboardClient | None
-
-        super().__init__(
-            hass,
-            _LOGGER,
-            name=f"{DOMAIN}_{entry.entry_id}",
-            update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
-        )
-
-    async def _async_update_data(self) -> dict[str, Any]:
-        """Poll the dashboard backend for live metrics."""
-        if self._client is None:
-            # No URL configured — return offline placeholder
-            return {
-                "status": "not_configured",
-                "ha_connected": False,
-                "connected_clients": 0,
-                "entity_count": 0,
-                "version": VERSION,
-                "timestamp": None,
-            }
-
-        try:
-            data = await self._client.get_status()
-            data["online"] = True
-            return data
-        except Exception as err:
-            # When the dashboard is unreachable we still update data so
-            # binary sensors can reflect the outage (raise UpdateFailed would
-            # prevent coordinator.data from updating).
-            _LOGGER.debug("Dashboard unreachable: %s", err)
-            return {
-                "status": "offline",
-                "online": False,
-                "ha_connected": False,
-                "connected_clients": 0,
-                "entity_count": 0,
-                "version": "unknown",
-                "timestamp": None,
-            }
-
-
 class MDTDashboardSensorBase(CoordinatorEntity, SensorEntity):
     """Base class for MDT Dashboard sensors."""
 
     def __init__(
         self,
-        coordinator: MDTDashboardDataUpdateCoordinator,
+        coordinator,
         entry: ConfigEntry,
         sensor_type: str,
     ) -> None:
@@ -162,8 +102,14 @@ class MDTDashboardLastUpdateSensor(MDTDashboardSensorBase):
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
 
     @property
-    def native_value(self) -> str | None:
-        return self.coordinator.data.get("timestamp")
+    def native_value(self) -> datetime | None:
+        ts = self.coordinator.data.get("timestamp")
+        if not ts:
+            return None
+        try:
+            return datetime.fromisoformat(ts)
+        except (ValueError, TypeError):
+            return None
 
 
 class MDTDashboardStateSensor(MDTDashboardSensorBase):
