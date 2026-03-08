@@ -13,6 +13,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+_LOGGER = logging.getLogger(__name__)
+
 from .const import (
     CONF_DASHBOARD_URL,
     CONF_ENABLE_SENSORS,
@@ -140,7 +142,12 @@ class MDTHomeDashboardOptionsFlow(config_entries.OptionsFlow):
                 errors["base"] = "invalid_url"
 
             if not errors:
-                return self.async_create_entry(title="", data=user_input)
+                # Update entry.data so the integration picks up the new URL
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, data={**self.config_entry.data, **user_input}
+                )
+                await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+                return self.async_create_entry(title="", data={})
 
         return self.async_show_form(
             step_id="init",
