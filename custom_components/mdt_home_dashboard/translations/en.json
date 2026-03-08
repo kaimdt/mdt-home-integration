@@ -3,22 +3,23 @@
     "step": {
       "user": {
         "title": "Configure MDT HOME Dashboard",
-        "description": "Set up your MDT HOME Dashboard integration",
+        "description": "Enter the URL of your MDT HOME Dashboard backend. The integration will verify connectivity.",
         "data": {
           "name": "Name",
-          "dashboard_url": "Dashboard URL (optional)",
+          "dashboard_url": "Dashboard URL",
+          "panel_enabled": "Show in Sidebar",
           "enable_webhooks": "Enable Webhooks",
           "enable_sensors": "Enable Sensors"
         }
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect to dashboard",
-      "invalid_url": "Invalid dashboard URL",
+      "cannot_connect": "Cannot connect to dashboard. Check the URL and make sure the backend is running.",
+      "invalid_url": "The URL format is invalid.",
       "unknown": "Unexpected error"
     },
     "abort": {
-      "already_configured": "Dashboard is already configured"
+      "already_configured": "This dashboard is already configured."
     }
   },
   "options": {
@@ -28,6 +29,7 @@
         "description": "Update your MDT HOME Dashboard settings",
         "data": {
           "dashboard_url": "Dashboard URL",
+          "panel_enabled": "Show in Sidebar",
           "enable_webhooks": "Enable Webhooks",
           "enable_sensors": "Enable Sensors"
         }

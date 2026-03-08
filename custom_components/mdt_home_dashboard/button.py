@@ -10,7 +10,7 @@ from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import CONF_DASHBOARD_URL, DATA_CLIENT, DEFAULT_NAME, DOMAIN, VERSION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,113 +21,78 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up MDT HOME Dashboard buttons based on a config entry."""
+    entry_data = hass.data[DOMAIN][entry.entry_id]
+    client = entry_data.get(DATA_CLIENT)
 
-    buttons = [
-        MDTDashboardRefreshButton(hass, entry),
-        MDTDashboardReloadButton(hass, entry),
-        MDTDashboardClearCacheButton(hass, entry),
-        MDTDashboardRestartButton(hass, entry),
-    ]
-
-    async_add_entities(buttons)
+    async_add_entities([
+        MDTDashboardRefreshButton(hass, entry, client),
+        MDTDashboardClearCacheButton(hass, entry, client),
+        MDTDashboardRestartButton(hass, entry, client),
+    ])
 
 
-class MDTDashboardButtonBase(ButtonEntity):
+class _BaseButton(ButtonEntity):
     """Base class for MDT Dashboard buttons."""
 
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        entry: ConfigEntry,
-        button_type: str,
-        name: str,
-        icon: str,
-    ) -> None:
-        """Initialize the button."""
+    def __init__(self, hass, entry, client, button_type, name, icon):
         self.hass = hass
         self._entry = entry
-        self._button_type = button_type
+        self._client = client
         self._attr_unique_id = f"{entry.entry_id}_{button_type}"
         self._attr_name = name
         self._attr_icon = icon
         self._attr_has_entity_name = True
+        self._button_type = button_type
 
     @property
     def device_info(self) -> dict[str, Any]:
-        """Return device information."""
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": self._entry.data.get(CONF_NAME, "MDT HOME Dashboard"),
+            "name": self._entry.data.get(CONF_NAME, DEFAULT_NAME),
             "manufacturer": "MDT",
             "model": "Home Dashboard",
-            "sw_version": "1.0.0",
+            "sw_version": VERSION,
+            "configuration_url": self._entry.data.get(CONF_DASHBOARD_URL),
         }
 
-    async def async_press(self) -> None:
-        """Handle the button press."""
-        # Fire event for dashboard
+    async def _send(self, command: str) -> None:
+        """Send a command to the dashboard backend and fire an HA event."""
+        if self._client:
+            try:
+                await self._client.send_command(command)
+            except Exception:
+                _LOGGER.warning("Dashboard unreachable for command %s", command)
         self.hass.bus.async_fire(
             f"{DOMAIN}_button",
-            {
-                "button_type": self._button_type,
-                "action": "pressed",
-            }
-        )
-
-        _LOGGER.info("Button %s pressed", self._button_type)
-
-
-class MDTDashboardRefreshButton(MDTDashboardButtonBase):
-    """Button to refresh dashboard state."""
-
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        """Initialize the refresh button."""
-        super().__init__(
-            hass,
-            entry,
-            "refresh",
-            "Refresh",
-            "mdi:refresh"
+            {"button_type": self._button_type, "action": "pressed"},
         )
 
 
-class MDTDashboardReloadButton(MDTDashboardButtonBase):
-    """Button to reload dashboard."""
+class MDTDashboardRefreshButton(_BaseButton):
+    """Trigger a state refresh on the dashboard backend."""
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        """Initialize the reload button."""
-        super().__init__(
-            hass,
-            entry,
-            "reload",
-            "Reload",
-            "mdi:reload"
-        )
+    def __init__(self, hass, entry, client):
+        super().__init__(hass, entry, client, "refresh", "Refresh", "mdi:refresh")
+
+    async def async_press(self) -> None:
+        await self._send("refresh")
 
 
-class MDTDashboardClearCacheButton(MDTDashboardButtonBase):
-    """Button to clear dashboard cache."""
+class MDTDashboardClearCacheButton(_BaseButton):
+    """Clear the dashboard entity cache."""
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        """Initialize the clear cache button."""
-        super().__init__(
-            hass,
-            entry,
-            "clear_cache",
-            "Clear Cache",
-            "mdi:delete-sweep"
-        )
+    def __init__(self, hass, entry, client):
+        super().__init__(hass, entry, client, "clear_cache", "Clear Cache", "mdi:delete-sweep")
+
+    async def async_press(self) -> None:
+        await self._send("clear_cache")
 
 
-class MDTDashboardRestartButton(MDTDashboardButtonBase):
-    """Button to restart dashboard."""
+class MDTDashboardRestartButton(_BaseButton):
+    """Request a dashboard restart."""
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        """Initialize the restart button."""
-        super().__init__(
-            hass,
-            entry,
-            "restart",
-            "Restart",
-            "mdi:restart"
-        )
+    def __init__(self, hass, entry, client):
+        super().__init__(hass, entry, client, "restart", "Restart Backend", "mdi:restart")
+
+    async def async_press(self) -> None:
+        await self._send("restart")
