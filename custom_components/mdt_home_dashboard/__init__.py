@@ -33,10 +33,16 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     SERVICE_ACTIVATE_SCENE,
+    SERVICE_EXECUTE_MACRO,
+    SERVICE_NAVIGATE_DASHBOARD,
     SERVICE_REFRESH_STATE,
     SERVICE_SEND_NOTIFICATION,
     SERVICE_SET_BACKGROUND,
+    SERVICE_SET_BRIGHTNESS,
+    SERVICE_SET_SCREENSAVER,
+    SERVICE_SET_SLEEP_MODE,
     SERVICE_SET_THEME,
+    SERVICE_SNAPSHOT_STATES,
     SERVICE_SWITCH_PAGE,
     SERVICE_TRIGGER_AUTOMATION,
     SERVICE_UPDATE_DASHBOARD,
@@ -118,6 +124,64 @@ SERVICE_TRIGGER_AUTOMATION_SCHEMA = vol.Schema(
     }
 )
 
+SERVICE_NAVIGATE_DASHBOARD_SCHEMA = vol.Schema(
+    {
+        vol.Required("page_id"): cv.string,
+        vol.Optional("transition", default="slide"): vol.In(
+            ["slide", "fade", "none"]
+        ),
+    }
+)
+
+SERVICE_SET_SCREENSAVER_SCHEMA = vol.Schema(
+    {
+        vol.Required("enabled"): cv.boolean,
+        vol.Optional("timeout"): vol.All(vol.Coerce(int), vol.Range(min=30, max=3600)),
+    }
+)
+
+SERVICE_SET_SLEEP_MODE_SCHEMA = vol.Schema(
+    {
+        vol.Required("enabled"): cv.boolean,
+    }
+)
+
+SERVICE_SET_BRIGHTNESS_SCHEMA = vol.Schema(
+    {
+        vol.Required("brightness"): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=100)
+        ),
+    }
+)
+
+SERVICE_SNAPSHOT_STATES_SCHEMA = vol.Schema(
+    {
+        vol.Required("name"): cv.string,
+        vol.Optional("entity_ids"): vol.All(cv.ensure_list, [cv.entity_id]),
+    }
+)
+
+SERVICE_EXECUTE_MACRO_SCHEMA = vol.Schema(
+    {
+        vol.Required("commands"): vol.All(
+            cv.ensure_list,
+            [
+                vol.Schema(
+                    {
+                        vol.Required("domain"): cv.string,
+                        vol.Required("service"): cv.string,
+                        vol.Optional("entity_id"): cv.entity_id,
+                        vol.Optional("data"): dict,
+                        vol.Optional("delay_ms", default=0): vol.All(
+                            vol.Coerce(int), vol.Range(min=0, max=10000)
+                        ),
+                    }
+                )
+            ],
+        ),
+    }
+)
+
 
 # ---------- Helpers ----------
 
@@ -171,6 +235,34 @@ class DashboardClient:
         async with self._session.post(
             f"{self._base}/api/integration/settings",
             json=settings,
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def get_statistics(self) -> dict[str, Any]:
+        """GET /api/stats/dashboard – fetch dashboard-wide statistics."""
+        async with self._session.get(
+            f"{self._base}/api/stats/dashboard",
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def get_entity_stats(self, entity_id: str) -> dict[str, Any]:
+        """GET /api/stats/entity-history/{entity_id}."""
+        async with self._session.get(
+            f"{self._base}/api/stats/entity-history/{entity_id}",
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def search_entities(self, query: str, limit: int = 50) -> list[dict]:
+        """GET /api/entities/search?q=...&limit=..."""
+        async with self._session.get(
+            f"{self._base}/api/entities/search",
+            params={"q": query, "limit": str(limit)},
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -252,8 +344,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 {"url": dashboard_url},
                 require_admin=False,
             )
+            _LOGGER.info("Registered MDT HOME Dashboard panel at %s", dashboard_url)
         except Exception:
             _LOGGER.debug("Could not register sidebar panel")
+
+    # Register a secondary diagnostics panel
+    if dashboard_url and ha_frontend:
+        try:
+            ha_frontend.async_register_built_in_panel(
+                hass,
+                "iframe",
+                "MDT Diagnostics",
+                "mdi:chart-timeline-variant-shimmer",
+                f"{DOMAIN}_diagnostics",
+                {"url": f"{dashboard_url}/#/diagnostics"},
+                require_admin=True,
+            )
+        except Exception:
+            _LOGGER.debug("Could not register diagnostics panel")
 
     # Register services (idempotent)
     await _async_register_services(hass)
@@ -269,11 +377,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id, None)
-        # Remove sidebar panel
+        # Remove sidebar panels
         try:
             ha_frontend.async_remove_panel(hass, DOMAIN)
         except Exception:
             _LOGGER.debug("Could not remove sidebar panel")
+        try:
+            ha_frontend.async_remove_panel(hass, f"{DOMAIN}_diagnostics")
+        except Exception:
+            _LOGGER.debug("Could not remove diagnostics panel")
     return unload_ok
 
 
@@ -384,6 +496,112 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             {"automation_id": automation_id, "data": data, "action": "trigger"},
         )
 
+    async def handle_navigate_dashboard(call: ServiceCall) -> None:
+        """Navigate dashboard with optional transition effect."""
+        page_id = call.data["page_id"]
+        transition = call.data.get("transition", "slide")
+        client = _get_client()
+        if client:
+            try:
+                await client.send_command(
+                    "switch_page",
+                    {"page_id": page_id, "transition": transition},
+                )
+            except Exception:
+                _LOGGER.warning("Could not navigate dashboard")
+        hass.bus.async_fire(
+            f"{DOMAIN}_navigation",
+            {"page_id": page_id, "transition": transition, "action": "navigate"},
+        )
+
+    async def handle_set_screensaver(call: ServiceCall) -> None:
+        """Enable or disable the screensaver."""
+        enabled = call.data["enabled"]
+        timeout = call.data.get("timeout")
+        settings: dict[str, Any] = {"screensaver": enabled}
+        if timeout is not None:
+            settings["screensaver_timeout"] = timeout
+        client = _get_client()
+        if client:
+            try:
+                await client.send_command("set_setting", settings)
+            except Exception:
+                _LOGGER.warning("Could not set screensaver on dashboard")
+        hass.bus.async_fire(f"{DOMAIN}_switch", {
+            "switch_type": "screensaver",
+            "state": "on" if enabled else "off",
+        })
+
+    async def handle_set_sleep_mode(call: ServiceCall) -> None:
+        """Enable or disable sleep mode."""
+        enabled = call.data["enabled"]
+        client = _get_client()
+        if client:
+            try:
+                await client.send_command("set_setting", {"sleep_mode": enabled})
+            except Exception:
+                _LOGGER.warning("Could not set sleep mode on dashboard")
+        hass.bus.async_fire(f"{DOMAIN}_switch", {
+            "switch_type": "sleep_mode",
+            "state": "on" if enabled else "off",
+        })
+
+    async def handle_set_brightness(call: ServiceCall) -> None:
+        """Set display brightness (0-100)."""
+        brightness = call.data["brightness"]
+        client = _get_client()
+        if client:
+            try:
+                await client.send_command(
+                    "set_brightness", {"brightness": brightness}
+                )
+            except Exception:
+                _LOGGER.warning("Could not set brightness on dashboard")
+        hass.bus.async_fire(
+            f"{DOMAIN}_update",
+            {"entity_id": "brightness", "data": {"brightness": brightness}},
+        )
+
+    async def handle_snapshot_states(call: ServiceCall) -> None:
+        """Snapshot current entity states to a named preset."""
+        name = call.data["name"]
+        entity_ids = call.data.get("entity_ids", [])
+        states: dict[str, Any] = {}
+        for eid in entity_ids:
+            state = hass.states.get(eid)
+            if state:
+                states[eid] = {
+                    "state": state.state,
+                    "attributes": dict(state.attributes),
+                }
+        hass.bus.async_fire(
+            f"{DOMAIN}_scene",
+            {"scene_id": name, "action": "snapshot", "states": states},
+        )
+
+    async def handle_execute_macro(call: ServiceCall) -> None:
+        """Execute a sequence of service calls with optional delays."""
+        import asyncio  # noqa: C0415
+        commands = call.data.get("commands", [])
+        for cmd in commands:
+            domain = cmd["domain"]
+            service = cmd["service"]
+            service_data: dict[str, Any] = cmd.get("data", {})
+            entity_id = cmd.get("entity_id")
+            if entity_id:
+                service_data["entity_id"] = entity_id
+            delay_ms = cmd.get("delay_ms", 0)
+            try:
+                await hass.services.async_call(
+                    domain, service, service_data, blocking=False
+                )
+            except Exception:
+                _LOGGER.warning(
+                    "Macro step failed: %s.%s", domain, service
+                )
+            if delay_ms > 0:
+                await asyncio.sleep(delay_ms / 1000.0)
+
     _svc = [
         (SERVICE_UPDATE_DASHBOARD, handle_update_dashboard, SERVICE_UPDATE_DASHBOARD_SCHEMA),
         (SERVICE_REFRESH_STATE, handle_refresh_state, None),
@@ -393,6 +611,12 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         (SERVICE_ACTIVATE_SCENE, handle_activate_scene, SERVICE_ACTIVATE_SCENE_SCHEMA),
         (SERVICE_SET_BACKGROUND, handle_set_background, SERVICE_SET_BACKGROUND_SCHEMA),
         (SERVICE_TRIGGER_AUTOMATION, handle_trigger_automation, SERVICE_TRIGGER_AUTOMATION_SCHEMA),
+        (SERVICE_NAVIGATE_DASHBOARD, handle_navigate_dashboard, SERVICE_NAVIGATE_DASHBOARD_SCHEMA),
+        (SERVICE_SET_SCREENSAVER, handle_set_screensaver, SERVICE_SET_SCREENSAVER_SCHEMA),
+        (SERVICE_SET_SLEEP_MODE, handle_set_sleep_mode, SERVICE_SET_SLEEP_MODE_SCHEMA),
+        (SERVICE_SET_BRIGHTNESS, handle_set_brightness, SERVICE_SET_BRIGHTNESS_SCHEMA),
+        (SERVICE_SNAPSHOT_STATES, handle_snapshot_states, SERVICE_SNAPSHOT_STATES_SCHEMA),
+        (SERVICE_EXECUTE_MACRO, handle_execute_macro, SERVICE_EXECUTE_MACRO_SCHEMA),
     ]
 
     for name, handler, schema in _svc:

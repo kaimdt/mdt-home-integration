@@ -147,3 +147,114 @@ trigger_automation:
       example: '{"brightness": 128}'
       selector:
         object:
+
+# Service navigate_dashboard
+navigate_dashboard:
+  name: Navigate Dashboard
+  description: Navigate to a specific page with transition effect
+  fields:
+    page_id:
+      name: Page ID
+      description: The ID of the page to navigate to
+      required: true
+      example: "living_room"
+      selector:
+        text:
+    transition:
+      name: Transition
+      description: The transition effect to use
+      required: false
+      default: "slide"
+      example: "fade"
+      selector:
+        select:
+          options:
+            - "slide"
+            - "fade"
+            - "none"
+
+# Service set_screensaver
+set_screensaver:
+  name: Set Screensaver
+  description: Enable or disable the screensaver with optional timeout
+  fields:
+    enabled:
+      name: Enabled
+      description: Whether to enable the screensaver
+      required: true
+      example: true
+      selector:
+        boolean:
+    timeout:
+      name: Timeout
+      description: Screensaver timeout in seconds (30-3600)
+      required: false
+      example: 300
+      selector:
+        number:
+          min: 30
+          max: 3600
+          unit_of_measurement: seconds
+
+# Service set_sleep_mode
+set_sleep_mode:
+  name: Set Sleep Mode
+  description: Enable or disable sleep mode on the dashboard
+  fields:
+    enabled:
+      name: Enabled
+      description: Whether to enable sleep mode
+      required: true
+      example: true
+      selector:
+        boolean:
+
+# Service set_brightness
+set_brightness:
+  name: Set Brightness
+  description: Set the dashboard display brightness
+  fields:
+    brightness:
+      name: Brightness
+      description: Brightness level (0-100%)
+      required: true
+      example: 75
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+
+# Service snapshot_states
+snapshot_states:
+  name: Snapshot States
+  description: Capture current entity states as a named preset for the dashboard
+  fields:
+    name:
+      name: Snapshot Name
+      description: Name for the state snapshot
+      required: true
+      example: "evening_mood"
+      selector:
+        text:
+    entity_ids:
+      name: Entity IDs
+      description: List of entity IDs to include in the snapshot
+      required: false
+      example: '["light.living_room", "light.kitchen"]'
+      selector:
+        entity:
+          multiple: true
+
+# Service execute_macro
+execute_macro:
+  name: Execute Macro
+  description: Execute a sequence of service calls with optional delays between them
+  fields:
+    commands:
+      name: Commands
+      description: List of service call commands to execute in sequence
+      required: true
+      example: '[{"domain": "light", "service": "turn_on", "entity_id": "light.living_room", "data": {"brightness": 255}, "delay_ms": 500}, {"domain": "light", "service": "turn_on", "entity_id": "light.kitchen"}]'
+      selector:
+        object:

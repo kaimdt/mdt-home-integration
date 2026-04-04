@@ -21,9 +21,13 @@ from .const import (
     DATA_COORDINATOR,
     DEFAULT_NAME,
     DOMAIN,
+    SENSOR_CACHE_HITS,
+    SENSOR_CACHE_MISSES,
+    SENSOR_CACHE_UPDATE_TIME,
     SENSOR_CONNECTED_CLIENTS,
     SENSOR_DASHBOARD_STATE,
     SENSOR_LAST_UPDATE,
+    SENSOR_WS_CONNECTED,
     VERSION,
 )
 
@@ -46,6 +50,10 @@ async def async_setup_entry(
         MDTDashboardCurrentPageSensor(coordinator, entry),
         MDTDashboardEntityCountSensor(coordinator, entry),
         MDTDashboardVersionSensor(coordinator, entry),
+        MDTDashboardCacheHitsSensor(coordinator, entry),
+        MDTDashboardCacheMissesSensor(coordinator, entry),
+        MDTDashboardCacheUpdateTimeSensor(coordinator, entry),
+        MDTDashboardWSConnectedSensor(coordinator, entry),
     ]
 
     async_add_entities(sensors)
@@ -183,4 +191,76 @@ class MDTDashboardVersionSensor(MDTDashboardSensorBase):
     @property
     def native_value(self) -> str:
         return self.coordinator.data.get("version", "unknown")
+
+
+class MDTDashboardCacheHitsSensor(MDTDashboardSensorBase):
+    """Number of entity cache hits (measures cache effectiveness)."""
+
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator, entry, SENSOR_CACHE_HITS)
+        self._attr_name = "Cache Hits"
+        self._attr_icon = "mdi:check-circle-outline"
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        self._attr_entity_category = "diagnostic"
+
+    @property
+    def native_value(self) -> int:
+        diagnostics = self.coordinator.data.get("diagnostics", {})
+        return diagnostics.get("cache_hits", 0)
+
+
+class MDTDashboardCacheMissesSensor(MDTDashboardSensorBase):
+    """Number of entity cache misses."""
+
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator, entry, SENSOR_CACHE_MISSES)
+        self._attr_name = "Cache Misses"
+        self._attr_icon = "mdi:close-circle-outline"
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        self._attr_entity_category = "diagnostic"
+
+    @property
+    def native_value(self) -> int:
+        diagnostics = self.coordinator.data.get("diagnostics", {})
+        return diagnostics.get("cache_misses", 0)
+
+
+class MDTDashboardCacheUpdateTimeSensor(MDTDashboardSensorBase):
+    """Last cache update duration in milliseconds."""
+
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator, entry, SENSOR_CACHE_UPDATE_TIME)
+        self._attr_name = "Cache Update Time"
+        self._attr_icon = "mdi:timer-outline"
+        self._attr_native_unit_of_measurement = "ms"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_category = "diagnostic"
+
+    @property
+    def native_value(self) -> int:
+        diagnostics = self.coordinator.data.get("diagnostics", {})
+        return diagnostics.get("cache_last_update_ms", 0)
+
+
+class MDTDashboardWSConnectedSensor(MDTDashboardSensorBase):
+    """Whether the backend WebSocket to HA is connected."""
+
+    def __init__(self, coordinator, entry):
+        super().__init__(coordinator, entry, SENSOR_WS_CONNECTED)
+        self._attr_name = "WebSocket Connected"
+        self._attr_icon = "mdi:lan-connect"
+        self._attr_entity_category = "diagnostic"
+
+    @property
+    def native_value(self) -> str:
+        ws_connected = self.coordinator.data.get("ha_ws_connected", False)
+        return "connected" if ws_connected else "disconnected"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        diagnostics = self.coordinator.data.get("diagnostics", {})
+        return {
+            "cache_update_count": diagnostics.get("cache_update_count", 0),
+            "ha_connected": self.coordinator.data.get("ha_connected", False),
+        }
 

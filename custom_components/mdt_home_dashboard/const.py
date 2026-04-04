@@ -1,7 +1,7 @@
 """Constants for the MDT HOME Dashboard integration."""
 
 DOMAIN = "mdt_home_dashboard"
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 
 # Configuration constants
 CONF_DASHBOARD_URL = "dashboard_url"
@@ -34,11 +34,21 @@ SERVICE_SWITCH_PAGE = "switch_page"
 SERVICE_ACTIVATE_SCENE = "activate_scene"
 SERVICE_SET_BACKGROUND = "set_background"
 SERVICE_TRIGGER_AUTOMATION = "trigger_automation"
+SERVICE_NAVIGATE_DASHBOARD = "navigate_dashboard"
+SERVICE_SET_SCREENSAVER = "set_screensaver"
+SERVICE_SET_SLEEP_MODE = "set_sleep_mode"
+SERVICE_SET_BRIGHTNESS = "set_brightness"
+SERVICE_SNAPSHOT_STATES = "snapshot_states"
+SERVICE_EXECUTE_MACRO = "execute_macro"
 
 # Sensor types
 SENSOR_CONNECTED_CLIENTS = "connected_clients"
 SENSOR_LAST_UPDATE = "last_update"
 SENSOR_DASHBOARD_STATE = "dashboard_state"
+SENSOR_CACHE_HITS = "cache_hits"
+SENSOR_CACHE_MISSES = "cache_misses"
+SENSOR_WS_CONNECTED = "ws_connected"
+SENSOR_CACHE_UPDATE_TIME = "cache_update_time"
 
 # Data keys stored in hass.data[DOMAIN]
 DATA_COORDINATOR = "coordinator"

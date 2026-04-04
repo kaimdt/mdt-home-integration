@@ -44,7 +44,11 @@
       "active_theme": { "name": "Active Theme" },
       "current_page": { "name": "Current Page" },
       "entity_count": { "name": "Entity Count" },
-      "backend_version": { "name": "Backend Version" }
+      "backend_version": { "name": "Backend Version" },
+      "cache_hits": { "name": "Cache Hits" },
+      "cache_misses": { "name": "Cache Misses" },
+      "cache_update_time": { "name": "Cache Update Time" },
+      "ws_connected": { "name": "WebSocket Connected" }
     },
     "binary_sensor": {
       "connection": { "name": "Dashboard Online" },
