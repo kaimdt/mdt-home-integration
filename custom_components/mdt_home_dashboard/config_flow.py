@@ -16,6 +16,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 _LOGGER = logging.getLogger(__name__)
 
 from .const import (
+    CONF_API_KEY,
     CONF_DASHBOARD_URL,
     CONF_ENABLE_SENSORS,
     CONF_ENABLE_WEBHOOKS,
@@ -98,6 +99,7 @@ class MDTHomeDashboardConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             {
                 vol.Optional(CONF_NAME, default=DEFAULT_NAME): str,
                 vol.Optional(CONF_DASHBOARD_URL, default=""): str,
+                vol.Optional(CONF_API_KEY, default=""): str,
                 vol.Optional(CONF_PANEL_ENABLED, default=True): bool,
                 vol.Optional(CONF_ENABLE_WEBHOOKS, default=True): bool,
                 vol.Optional(CONF_ENABLE_SENSORS, default=True): bool,
@@ -156,6 +158,10 @@ class MDTHomeDashboardOptionsFlow(config_entries.OptionsFlow):
                     vol.Optional(
                         CONF_DASHBOARD_URL,
                         default=self.config_entry.data.get(CONF_DASHBOARD_URL, ""),
+                    ): str,
+                    vol.Optional(
+                        CONF_API_KEY,
+                        default=self.config_entry.data.get(CONF_API_KEY, ""),
                     ): str,
                     vol.Optional(
                         CONF_PANEL_ENABLED,

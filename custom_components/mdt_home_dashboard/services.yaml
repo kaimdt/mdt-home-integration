@@ -57,6 +57,23 @@ send_notification:
             - "warning"
             - "error"
             - "success"
+            - "critical"
+            - "emergency"
+    source:
+      name: Source
+      description: The source of the notification (displayed as context)
+      required: false
+      default: "home_assistant"
+      example: "automation"
+      selector:
+        text:
+    icon:
+      name: Icon
+      description: An optional icon name for the notification
+      required: false
+      example: "bell"
+      selector:
+        text:
 
 # Service set_theme
 set_theme:

@@ -7,9 +7,13 @@
         "data": {
           "name": "Name",
           "dashboard_url": "Dashboard URL",
+          "api_key": "API Key",
           "panel_enabled": "Show in Sidebar",
           "enable_webhooks": "Enable Webhooks",
           "enable_sensors": "Enable Sensors"
+        },
+        "data_description": {
+          "api_key": "API key generated in the Dashboard Admin Panel (Admin > API Keys). Required for authentication."
         }
       }
     },
@@ -29,9 +33,13 @@
         "description": "Update your MDT HOME Dashboard settings. Changes will reload the integration.",
         "data": {
           "dashboard_url": "Dashboard URL",
+          "api_key": "API Key",
           "panel_enabled": "Show in Sidebar",
           "enable_webhooks": "Enable Webhooks",
           "enable_sensors": "Enable Sensors"
+        },
+        "data_description": {
+          "api_key": "API key generated in the Dashboard Admin Panel (Admin > API Keys). Required for authentication."
         }
       }
     }

@@ -26,6 +26,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
+    CONF_API_KEY,
     CONF_DASHBOARD_URL,
     CONF_PANEL_ENABLED,
     DATA_CLIENT,
@@ -106,8 +107,10 @@ SERVICE_SEND_NOTIFICATION_SCHEMA = vol.Schema(
         vol.Required("message"): cv.string,
         vol.Optional("title"): cv.string,
         vol.Optional("type", default="info"): vol.In(
-            ["info", "warning", "error", "success"]
+            ["info", "warning", "error", "success", "critical", "emergency"]
         ),
+        vol.Optional("source", default="home_assistant"): cv.string,
+        vol.Optional("icon"): cv.string,
     }
 )
 
@@ -359,14 +362,24 @@ SERVICE_GROUP_ACTION_SCHEMA = vol.Schema(
 class DashboardClient:
     """Thin HTTP wrapper around the dashboard backend API."""
 
-    def __init__(self, url: str, session: aiohttp.ClientSession) -> None:
+    def __init__(self, url: str, session: aiohttp.ClientSession, api_key: str = "") -> None:
         self._base = url.rstrip("/")
         self._session = session
+        self._api_key = api_key
+
+    def _headers(self) -> dict[str, str]:
+        """Build auth headers for requests."""
+        headers: dict[str, str] = {}
+        if self._api_key:
+            headers["X-API-Key"] = self._api_key
+        return headers
 
     async def get_status(self) -> dict[str, Any]:
         """GET /api/integration/status – used by the coordinator."""
         async with self._session.get(
-            f"{self._base}/api/integration/status", timeout=aiohttp.ClientTimeout(total=10)
+            f"{self._base}/api/integration/status",
+            headers=self._headers(),
+            timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
             return await resp.json()
@@ -379,6 +392,7 @@ class DashboardClient:
         async with self._session.post(
             f"{self._base}/api/integration/command",
             json=payload,
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -395,7 +409,9 @@ class DashboardClient:
     async def get_settings(self) -> dict[str, Any]:
         """GET /api/integration/settings."""
         async with self._session.get(
-            f"{self._base}/api/integration/settings", timeout=aiohttp.ClientTimeout(total=10)
+            f"{self._base}/api/integration/settings",
+            headers=self._headers(),
+            timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
             data = await resp.json()
@@ -406,6 +422,7 @@ class DashboardClient:
         async with self._session.post(
             f"{self._base}/api/integration/settings",
             json=settings,
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -415,6 +432,7 @@ class DashboardClient:
         """GET /api/stats/dashboard – fetch dashboard-wide statistics."""
         async with self._session.get(
             f"{self._base}/api/stats/dashboard",
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -424,6 +442,7 @@ class DashboardClient:
         """GET /api/stats/entity-history/{entity_id}."""
         async with self._session.get(
             f"{self._base}/api/stats/entity-history/{entity_id}",
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -434,6 +453,7 @@ class DashboardClient:
         async with self._session.get(
             f"{self._base}/api/entities/search",
             params={"q": query, "limit": str(limit)},
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -443,6 +463,7 @@ class DashboardClient:
         """GET /api/integration/status – fetch extended diagnostics."""
         async with self._session.get(
             f"{self._base}/api/integration/status",
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -453,6 +474,7 @@ class DashboardClient:
         """GET /api/admin/ha/logs – fetch HA error log."""
         async with self._session.get(
             f"{self._base}/api/admin/ha/logs",
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=15),
         ) as resp:
             resp.raise_for_status()
@@ -463,6 +485,7 @@ class DashboardClient:
         async with self._session.get(
             f"{self._base}/api/admin/ha/logbook",
             params={"hours": str(hours)},
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=15),
         ) as resp:
             resp.raise_for_status()
@@ -472,6 +495,7 @@ class DashboardClient:
         """GET /api/admin/ha/calendars – fetch HA calendars."""
         async with self._session.get(
             f"{self._base}/api/admin/ha/calendars",
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -482,6 +506,7 @@ class DashboardClient:
         async with self._session.get(
             f"{self._base}/api/integration/analytics/top",
             params={"limit": str(limit)},
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -491,6 +516,7 @@ class DashboardClient:
         """GET /api/integration/analytics/entity/{entity_id}."""
         async with self._session.get(
             f"{self._base}/api/integration/analytics/entity/{entity_id}",
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -501,6 +527,7 @@ class DashboardClient:
         async with self._session.get(
             f"{self._base}/api/integration/health",
             params={"stale_threshold": str(stale_threshold)},
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -510,6 +537,7 @@ class DashboardClient:
         """GET /api/integration/composite – get computed composite sensors."""
         async with self._session.get(
             f"{self._base}/api/integration/composite",
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -529,6 +557,7 @@ class DashboardClient:
                 "entities": entities,
                 "unit": unit,
             },
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -540,6 +569,7 @@ class DashboardClient:
         """GET /api/integration/scenes."""
         async with self._session.get(
             f"{self._base}/api/integration/scenes",
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -550,6 +580,7 @@ class DashboardClient:
         async with self._session.post(
             f"{self._base}/api/integration/scenes",
             json={"scene_id": scene_id, "name": name, "steps": steps},
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -560,6 +591,7 @@ class DashboardClient:
         async with self._session.post(
             f"{self._base}/api/integration/scenes/{scene_id}/execute",
             json={},
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=30),
         ) as resp:
             resp.raise_for_status()
@@ -569,6 +601,7 @@ class DashboardClient:
         """DELETE /api/integration/scenes/{scene_id}."""
         async with self._session.delete(
             f"{self._base}/api/integration/scenes/{scene_id}",
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -590,6 +623,7 @@ class DashboardClient:
                 "run_at_unix": run_at_unix,
                 "data": data or {},
             },
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -599,6 +633,7 @@ class DashboardClient:
         """DELETE /api/integration/schedules/{schedule_id}."""
         async with self._session.delete(
             f"{self._base}/api/integration/schedules/{schedule_id}",
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -608,6 +643,7 @@ class DashboardClient:
         """GET /api/integration/schedules."""
         async with self._session.get(
             f"{self._base}/api/integration/schedules",
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -636,6 +672,7 @@ class DashboardClient:
         async with self._session.post(
             f"{self._base}/api/integration/watchdogs",
             json=payload,
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -645,6 +682,7 @@ class DashboardClient:
         """DELETE /api/integration/watchdogs/{watchdog_id}."""
         async with self._session.delete(
             f"{self._base}/api/integration/watchdogs/{watchdog_id}",
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -655,6 +693,7 @@ class DashboardClient:
         async with self._session.post(
             f"{self._base}/api/integration/watchdogs/check",
             json={},
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=15),
         ) as resp:
             resp.raise_for_status()
@@ -673,6 +712,7 @@ class DashboardClient:
                 "delay_secs": delay_secs,
                 "data": data or {},
             },
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -691,6 +731,7 @@ class DashboardClient:
                 "condition_state": condition_state,
                 "data": data or {},
             },
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -708,6 +749,7 @@ class DashboardClient:
                 "entity_ids": entity_ids,
                 "data": data or {},
             },
+            headers=self._headers(),
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             resp.raise_for_status()
@@ -729,8 +771,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
 
     dashboard_url = entry.data.get(CONF_DASHBOARD_URL, "")
+    api_key = entry.data.get(CONF_API_KEY, "")
     session = async_get_clientsession(hass, verify_ssl=False)
-    client = DashboardClient(dashboard_url, session) if dashboard_url else None
+    client = DashboardClient(dashboard_url, session, api_key=api_key) if dashboard_url else None
 
     hass.data[DOMAIN][entry.entry_id] = {
         DATA_CLIENT: client,
@@ -1045,7 +1088,23 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         message = call.data["message"]
         title = call.data.get("title", "MDT HOME Dashboard")
         notif_type = call.data.get("type", "info")
-        payload = {"message": message, "title": title, "type": notif_type}
+        # Map HA type to backend level
+        type_to_level = {
+            "info": "info",
+            "success": "info",
+            "warning": "warning",
+            "error": "critical",
+            "critical": "critical",
+            "emergency": "emergency",
+        }
+        level = type_to_level.get(notif_type, "info")
+        payload = {
+            "message": message,
+            "title": title,
+            "level": level,
+            "source": call.data.get("source", "home_assistant"),
+            "icon": call.data.get("icon", ""),
+        }
         client = _get_client()
         if client:
             try:

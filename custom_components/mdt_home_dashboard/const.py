@@ -5,6 +5,7 @@ VERSION = "2.3.0"
 
 # Configuration constants
 CONF_DASHBOARD_URL = "dashboard_url"
+CONF_API_KEY = "api_key"
 CONF_ENABLE_WEBHOOKS = "enable_webhooks"
 CONF_ENABLE_SENSORS = "enable_sensors"
 CONF_PANEL_ENABLED = "panel_enabled"
